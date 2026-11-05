@@ -44,6 +44,28 @@ export function loadCounts(kv: KV): Record<string, number> {
   return out;
 }
 
+/** Every stored day with at least one block done, as day -> DoneMap. Corrupted entries are skipped. */
+export function loadAllDone(kv: KV): Record<string, DoneMap> {
+  const out: Record<string, DoneMap> = {};
+  for (let i = 0; i < kv.length; i++) {
+    const k = kv.key(i);
+    if (!k?.startsWith(DONE_PREFIX)) continue;
+    const m = parseDone(kv.getItem(k));
+    if (countDone(m) > 0) out[k.slice(DONE_PREFIX.length)] = m;
+  }
+  return out;
+}
+
+/** Removes the per-user data (daily progress and plan) so the next person to sign in on this browser starts clean. */
+export function clearUserData(kv: KV): void {
+  const keys: string[] = [];
+  for (let i = 0; i < kv.length; i++) {
+    const k = kv.key(i);
+    if (k && (k.startsWith(DONE_PREFIX) || k === PLAN_KEY)) keys.push(k);
+  }
+  keys.forEach((k) => kv.removeItem?.(k));
+}
+
 /** Minutes of "Foco" blocks done vs total. */
 export function focusTotals(done: DoneMap, blocks: readonly Block[]): { total: number; got: number } {
   let total = 0, got = 0;

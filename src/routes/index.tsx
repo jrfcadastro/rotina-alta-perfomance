@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChartColumn, Check, ShieldCheck, Clock, Flame, Pencil, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
 import { AdminPanel } from "@/components/admin-panel";
@@ -10,8 +10,9 @@ import { clone, defaultPlan, sortRotina, validatePlan, type Plan } from "@/lib/p
 import { useSession } from "@/lib/use-session";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchRemotePlan, pushRemotePlan } from "@/lib/plan-sync";
+import { daysToUpload, fetchRemoteProgress, pushRemoteProgress } from "@/lib/progress-sync";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { countDone, focusTotals, loadCounts, loadDone, loadPlan, saveDone, savePlan } from "@/lib/storage";
+import { clearUserData, countDone, focusTotals, loadAllDone, loadCounts, loadDone, loadPlan, saveDone, savePlan } from "@/lib/storage";
 import { currentBlock, dateKey, ferramentas, lastDays, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
@@ -37,6 +38,7 @@ const tabs = [
 ];
 const adminTab = { label: "Admin", icon: ShieldCheck, sub: "Gerencie quem pode entrar no app." };
 const todayKey = () => dateKey(new Date());
+const db = supabase as unknown as SupabaseClient; // lazy proxy: safe at module level
 const fade = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.28 } };
 
 function TagPill({ tag }: { tag: Tag }) {
@@ -186,26 +188,64 @@ function Index() {
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
-  // After login, pull the user's saved plan from Supabase; if they have none yet, upload the local one.
   const userId = session?.user.id;
+  const pushQueue = useRef<Promise<unknown>>(Promise.resolve()); // keeps day uploads in order
+  const lastPull = useRef(0);
+  const prevUser = useRef<string | undefined>(undefined);
+
+  // Pull the user's days from Supabase: days on the server win over local ones, local-only days are uploaded.
+  const pullProgress = useCallback(async (uid: string) => {
+    lastPull.current = Date.now();
+    const remote = await fetchRemoteProgress(db, uid);
+    const upload = daysToUpload(loadAllDone(localStorage), remote);
+    for (const [day, d] of Object.entries(remote)) saveDone(localStorage, day, d);
+    setCounts(loadCounts(localStorage));
+    setDone(loadDone(localStorage, todayKey()));
+    await pushRemoteProgress(db, uid, upload);
+  }, []);
+
+  // After login: sync the plan and the daily progress. On logout: wipe this browser's per-user data
+  // so the next person to sign in doesn't inherit (or upload) someone else's routine.
   useEffect(() => {
-    if (!userId) { setSync("idle"); return undefined; }
+    if (!userId) {
+      if (prevUser.current) {
+        clearUserData(localStorage);
+        setPlan(defaultPlan());
+        setDone({});
+        setCounts({});
+        setDraft(null);
+      }
+      prevUser.current = undefined;
+      setSync("idle");
+      return undefined;
+    }
+    prevUser.current = userId;
     let cancelled = false;
     setSync("syncing");
     (async () => {
-      try {
-        const db = supabase as unknown as SupabaseClient;
+      const syncPlan = async () => {
         const remote = await fetchRemotePlan(db, userId);
         if (cancelled) return;
         if (remote) { setPlan(remote); savePlan(localStorage, remote); }
-        else await pushRemotePlan(db, userId, loadPlan(localStorage));
-        if (!cancelled) setSync("synced");
-      } catch {
-        if (!cancelled) setSync("error");
-      }
+        else { setPlan(loadPlan(localStorage)); await pushRemotePlan(db, userId, loadPlan(localStorage)); }
+      };
+      const results = await Promise.allSettled([syncPlan(), pullProgress(userId)]);
+      if (!cancelled) setSync(results.every((r) => r.status === "fulfilled") ? "synced" : "error");
     })();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, pullProgress]);
+
+  // Pick up changes made on another device when this tab regains focus (at most every 15 s).
+  useEffect(() => {
+    if (!userId) return undefined;
+    const refresh = () => {
+      if (document.visibilityState === "hidden" || Date.now() - lastPull.current < 15_000) return;
+      pullProgress(userId).then(() => setSync("synced"), () => setSync("error"));
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { document.removeEventListener("visibilitychange", refresh); window.removeEventListener("focus", refresh); };
+  }, [userId, pullProgress]);
 
   const pick = (i: number) => { setTab(i); localStorage.setItem("rap-tab", String(i)); };
   const toggleDark = () => { localStorage.setItem("rap-dark", dark ? "0" : "1"); setDark(!dark); };
@@ -215,6 +255,13 @@ function Index() {
     setDone(n);
     saveDone(localStorage, today, n);
     setCounts((c) => ({ ...c, [today]: countDone(n, ids) }));
+    if (userId) {
+      const day = today;
+      setSync("syncing");
+      pushQueue.current = pushQueue.current
+        .then(() => pushRemoteProgress(db, userId, { [day]: n }))
+        .then(() => setSync("synced"), () => setSync("error"));
+    }
   };
 
   const startEdit = () => { setDraft(clone(plan)); setEditError(null); setConfirmReset(false); };
@@ -228,7 +275,7 @@ function Index() {
     setPlan(next);
     if (userId) {
       setSync("syncing");
-      pushRemotePlan(supabase as unknown as SupabaseClient, userId, next).then(() => setSync("synced"), () => setSync("error"));
+      pushRemotePlan(db, userId, next).then(() => setSync("synced"), () => setSync("error"));
     }
     setCounts((c) => ({ ...c, [today]: countDone(done, next.rotina.map((b) => b.id)) }));
     cancelEdit();
