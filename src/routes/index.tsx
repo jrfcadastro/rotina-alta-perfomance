@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChartColumn, Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
+import { ChartColumn, Check, ShieldCheck, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
+import { AdminPanel } from "@/components/admin-panel";
+import { AuthButton } from "@/components/auth-button";
+import { useSession } from "@/lib/use-session";
+import { countDone, focusTotals, loadCounts, loadDone, saveDone } from "@/lib/storage";
 import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, lastDays, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
@@ -25,6 +29,7 @@ const tabs = [
   { label: "Ferramentas", icon: Wrench, sub: "O kit essencial para foco e automação." },
   { label: "Histórico", icon: ChartColumn, sub: "Blocos concluídos nos últimos 7 dias." },
 ];
+const adminTab = { label: "Admin", icon: ShieldCheck, sub: "Gerencie quem pode entrar no app." };
 const todayKey = () => dateKey(new Date());
 const fade = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.28 } };
 
@@ -140,6 +145,7 @@ function History({ counts, today }: { counts: Record<string, number>; today: str
 
 function Index() {
   const [tab, setTab] = useState(0);
+  const { session, isAdmin } = useSession();
   const [dark, setDark] = useState(true);
   const [done, setDone] = useState<Record<number, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({}); // day -> blocks done
@@ -159,22 +165,13 @@ function Index() {
 
   // Reload the checklist whenever the day changes.
   useEffect(() => {
-    try { setDone(JSON.parse(localStorage.getItem("rap-done-" + today) ?? "{}")); } catch { setDone({}); }
+    setDone(loadDone(localStorage, today));
   }, [today]);
 
   useEffect(() => {
     setTab(Number(localStorage.getItem("rap-tab") ?? 0) || 0);
     setDark(localStorage.getItem("rap-dark") !== "0");
-    const c: Record<string, number> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)!;
-      if (!k.startsWith("rap-done-")) continue;
-      try {
-        const n = Object.values(JSON.parse(localStorage.getItem(k) || "{}")).filter(Boolean).length;
-        if (n > 0) c[k.slice(9)] = n;
-      } catch { /* ignore corrupted entry */ }
-    }
-    setCounts(c);
+    setCounts(loadCounts(localStorage));
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
@@ -183,21 +180,19 @@ function Index() {
   const toggle = (i: number) => {
     const n = { ...done, [i]: !done[i] };
     setDone(n);
-    localStorage.setItem("rap-done-" + today, JSON.stringify(n));
-    setCounts((c) => ({ ...c, [today]: Object.values(n).filter(Boolean).length }));
+    saveDone(localStorage, today, n);
+    setCounts((c) => ({ ...c, [today]: countDone(n) }));
   };
 
-  const count = Object.values(done).filter(Boolean).length;
+  const count = countDone(done);
   const pct = count / rotina.length;
-  const focus = useMemo(() => {
-    let total = 0, got = 0;
-    rotina.forEach(([h, , , , t], i) => { if (t === "Foco") { total += minutes(h); if (done[i]) got += minutes(h); } });
-    return { total, got };
-  }, [done]);
+  const focus = useMemo(() => focusTotals(done), [done]);
   const current = now ? currentBlock(now) : -1;
   const st = streak(days, new Date());
   void today; // re-render on day change so the streak refreshes
-  const T = tabs[tab] ?? tabs[0]!;
+  const allTabs = isAdmin ? [...tabs, adminTab] : tabs;
+  const cur = tab < allTabs.length ? tab : 0; // saved tab may be Admin after logout
+  const T = allTabs[cur] ?? tabs[0]!;
 
   return (
     <div className="min-h-screen bg-app font-sans text-foreground antialiased">
@@ -209,6 +204,7 @@ function Index() {
           </div>
           <div className="no-print flex items-center gap-3">
             <Switch on={dark} onChange={toggleDark} />
+            <AuthButton />
             <button onClick={() => window.print()}
               className="inline-flex items-center gap-2 rounded-xl border border-input px-3 py-2 text-sm font-semibold transition-all hover:border-primary hover:text-primary hover:shadow-glow">
               <Printer className="size-4" /><span className="hidden sm:inline">Imprimir / PDF</span>
@@ -239,10 +235,10 @@ function Index() {
         </motion.section>
 
         <nav className="no-print no-scrollbar glass mb-8 flex gap-1 overflow-x-auto rounded-2xl p-1.5 md:inline-flex">
-          {tabs.map((t, i) => (
+          {allTabs.map((t, i) => (
             <button key={t.label} onClick={() => pick(i)}
-              className={`relative shrink-0 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${tab === i ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-              {tab === i && <motion.span layoutId="pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} className="absolute inset-0 rounded-xl bg-primary shadow-glow" />}
+              className={`relative shrink-0 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${cur === i ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              {cur === i && <motion.span layoutId="pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} className="absolute inset-0 rounded-xl bg-primary shadow-glow" />}
               <span className="relative flex items-center gap-2"><t.icon className="size-4" />{t.label}</span>
             </button>
           ))}
@@ -250,13 +246,13 @@ function Index() {
 
         <section className="glass rounded-2xl p-5 shadow-soft md:p-8">
           <AnimatePresence mode="wait">
-            <motion.div key={tab} {...fade}>
+            <motion.div key={cur} {...fade}>
               <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><T.icon className="size-6 text-primary" />{T.label}</h2>
                   <p className="mt-1 text-muted-foreground">{T.sub}</p>
                 </div>
-                {tab === 0 && (
+                {cur === 0 && (
                   <div className="w-full sm:w-64">
                     <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">Hoje</span><span className="font-semibold">{count}/{rotina.length} concluídos</span></div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
@@ -266,7 +262,7 @@ function Index() {
                 )}
               </div>
 
-              {tab === 0 && (
+              {cur === 0 && (
                 <div>
                   <div className="hidden grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] gap-4 px-4 pb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:grid">
                     <div /><div>Horário</div><div>Atividade</div><div>Método</div><div>Dica chave</div>
@@ -294,10 +290,11 @@ function Index() {
                   })}
                 </div>
               )}
-              {tab === 1 && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
-              {tab === 2 && <SimpleList head={["Dia", "Ação", "Duração"]} rows={checklist} />}
-              {tab === 4 && <History counts={counts} today={today} />}
-              {tab === 3 && (
+              {cur === 1 && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
+              {cur === 2 && <SimpleList head={["Dia", "Ação", "Duração"]} rows={checklist} />}
+              {cur === 4 && <History counts={counts} today={today} />}
+              {cur === 5 && isAdmin && session && <AdminPanel selfId={session.user.id} />}
+              {cur === 3 && (
                 <div className="grid gap-5 sm:grid-cols-3">
                   {ferramentas.map(([e, t, d], i) => (
                     <motion.div key={t} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }} whileHover={{ y: -4 }}
