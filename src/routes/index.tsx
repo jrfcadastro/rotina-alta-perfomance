@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
+import { adaptacoes, checklist, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -15,88 +18,103 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Tag = "Foco" | "Trabalho" | "Descanso" | "Aprendizado";
-const tagClass: Record<Tag, string> = {
-  Foco: "bg-tag-foco/15 text-tag-foco",
-  Trabalho: "bg-tag-trabalho/15 text-tag-trabalho",
-  Descanso: "bg-tag-descanso/15 text-tag-descanso",
-  Aprendizado: "bg-tag-aprendizado/15 text-tag-aprendizado",
-};
-
-const rotina: [string, string, string, string, Tag][] = [
-  ["5:00-5:10", "Hidratação + luz solar", "500ml água com limão", "Ativa cortisol natural", "Descanso"],
-  ["5:10-5:30", "Meditação + visualização de metas", "10min meditação + 5min visualização", "Foco no propósito", "Foco"],
-  ["5:30-6:00", "Exercício (HIIT ou yoga + musculação)", "15min HIIT + 15min musculação", "Libera BDNF", "Descanso"],
-  ["6:00-6:30", "Banho frio + café da manhã", "Proteínas (ovos, abacate)", "Evitar carboidratos refinados", "Descanso"],
-  ["6:30-7:00", "Foco Profundo #1", "Tarefa mais crítica do dia", "Modo avião no celular", "Foco"],
-  ["7:30-9:30", "Foco Profundo #2 (trabalho)", "Time-blocking (90min + 10min pausa)", "Alongamento na pausa", "Foco"],
-  ["9:30-9:45", "Lanche rápido + caminhada", "Nozes/frutas + 5min caminhada", "Ativar circulação", "Descanso"],
-  ["9:45-11:45", "Trabalho semi-focado", "Pomodoro avançado (50/10)", "Emails/reuniões curtas", "Trabalho"],
-  ["11:45-12:30", "Almoço (sem telas)", "Proteína + gordura saudável", "Mastigação lenta", "Descanso"],
-  ["12:30-14:00", "Tarefas operacionais", "Batch processing + automações", "Filtros de e-mail", "Trabalho"],
-  ["14:00-14:15", "Power Nap", "10min descanso", "Escuro/tampões de ouvido", "Descanso"],
-  ["14:15-16:00", "Bloco colaborativo", "Reuniões 25/50min com agenda", "Standing meetings", "Trabalho"],
-  ["16:00-17:00", "Tarefas leves + planejamento", "Notion/ClickUp", "Revisar metas diárias", "Trabalho"],
-  ["17:00-17:30", "Síntese do dia", "3 vitórias + 1 aprendizado", "Registrar em diário", "Aprendizado"],
-  ["17:30-18:30", "Deslocamento + transição mental", "Podcast/música instrumental", "Evitar notícias", "Descanso"],
-  ["18:30-19:30", "Treino", "45min intenso", "Liberar tensão", "Descanso"],
-  ["19:30-20:30", "Jantar leve + tempo livre", "Proteína + vegetais", "Sem trabalho", "Descanso"],
-  ["20:30-21:30", "Aprendizado/projeto pessoal", "Curso/livro (60min)", "Modo foco", "Aprendizado"],
-  ["21:30-22:00", "Rotina noturna", "Luz âmbar + alongamento + diário", "Gratidão + planejamento", "Descanso"],
-  ["22:00", "Dormir", "7-8h de sono", "Temperatura 19°C", "Descanso"],
+const tabs = [
+  { label: "Rotina Diária", icon: Zap, sub: "Seu dia das 5:00 às 22:00, bloco a bloco." },
+  { label: "Adaptações", icon: Shuffle, sub: "Ajustes para quando a vida não segue o plano." },
+  { label: "Checklist Semanal", icon: CalendarCheck, sub: "Rituais que mantêm a semana no trilho." },
+  { label: "Ferramentas", icon: Wrench, sub: "O kit essencial para foco e automação." },
 ];
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const fade = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.28 } };
 
-const adaptacoes = [
-  ["Acordar mais tarde", "Reduzir bloco matinal para 30min", "5:30-6:00: Foco Profundo #1"],
-  ["Filhos/responsabilidades", "Treino no horário de almoço", "12:30-13:00 (HIIT rápido)"],
-  ["Cansaço à tarde", "Substituir power nap por respiração", "4-7-8 (10min)"],
-];
-const checklist = [
-  ["Segunda-feira", "Planejamento semanal", "30min"],
-  ["Sexta-feira", "Revisão de métricas", "30min"],
-  ["Sábado/Domingo", "Dia offline (recuperação)", "24h (1 dia)"],
-];
-const ferramentas = [
-  ["🚫", "Foco", "Cold Turkey (bloqueador de distrações)"],
-  ["⏱️", "Gestão de Tempo", "Toggl Track"],
-  ["🤖", "Automação", "Zapier/Make"],
-];
+function TagPill({ tag }: { tag: Tag }) {
+  return <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${tagClass[tag]}`}>{tag}</span>;
+}
 
-const tabs = ["Rotina Diária", "Adaptações", "Checklist Semanal", "Ferramentas"];
-const today = () => new Date().toISOString().slice(0, 10);
-
-function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
+function Circle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[600px] border-collapse text-sm md:text-base">
-        <thead>
-          <tr>
-            {head.map((h, i) => (
-              <th key={h} className={`bg-primary px-3 py-3 text-left font-semibold text-primary-foreground ${i === 0 ? "rounded-tl-lg" : ""} ${i === head.length - 1 ? "rounded-tr-lg" : ""}`}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-b border-border transition-colors even:bg-muted hover:bg-secondary">
-              {r.map((c, j) => <td key={j} className="px-3 py-3 align-top">{c}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <motion.button type="button" role="checkbox" aria-checked={on} aria-label={label} onClick={onClick}
+      animate={{ scale: on ? [1, 1.3, 1] : 1 }} transition={{ duration: 0.3 }}
+      className={`grid size-6 shrink-0 place-items-center rounded-full border-2 transition-colors ${on ? "border-primary bg-primary text-primary-foreground shadow-glow" : "border-input hover:border-primary"}`}>
+      {on && <Check className="size-3.5" strokeWidth={3} />}
+    </motion.button>
+  );
+}
+
+function Strike({ on, children }: { on: boolean; children: ReactNode }) {
+  return (
+    <span className={`relative inline transition-opacity duration-300 ${on ? "opacity-50" : ""}`}>
+      {children}
+      <span className={`pointer-events-none absolute left-0 top-1/2 h-px bg-current transition-all duration-500 ${on ? "w-full" : "w-0"}`} />
+    </span>
+  );
+}
+
+function Switch({ on, onChange }: { on: boolean; onChange: () => void }) {
+  return (
+    <button role="switch" aria-checked={on} aria-label="Modo escuro" onClick={onChange}
+      className={`relative h-7 w-12 rounded-full border border-border transition-colors ${on ? "bg-primary" : "bg-secondary"}`}>
+      <motion.span layout transition={{ type: "spring", stiffness: 500, damping: 30 }}
+        className={`absolute top-0.5 grid size-6 place-items-center rounded-full bg-background shadow-soft ${on ? "right-0.5" : "left-0.5"}`}>
+        {on ? <Moon className="size-3.5 text-primary" /> : <Sun className="size-3.5 text-accent" />}
+      </motion.span>
+    </button>
+  );
+}
+
+function Donut({ pct }: { pct: number }) {
+  const r = 34, c = 2 * Math.PI * r;
+  return (
+    <div className="relative size-24">
+      <svg viewBox="0 0 80 80" className="size-full -rotate-90">
+        <defs>
+          <linearGradient id="dg" x1="0" x2="1"><stop offset="0" stopColor="var(--primary)" /><stop offset="1" stopColor="var(--primary-deep)" /></linearGradient>
+        </defs>
+        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--secondary)" strokeWidth="7" />
+        <motion.circle cx="40" cy="40" r={r} fill="none" stroke="url(#dg)" strokeWidth="7" strokeLinecap="round"
+          strokeDasharray={c} initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c * (1 - pct) }} transition={{ duration: 0.8, ease: "easeOut" }} />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-xl font-bold">{Math.round(pct * 100)}%</div>
+    </div>
+  );
+}
+
+function SimpleList({ head, rows }: { head: string[]; rows: string[][] }) {
+  return (
+    <div>
+      <div className="hidden grid-cols-3 gap-4 px-4 pb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+        {head.map((h) => <div key={h}>{h}</div>)}
+      </div>
+      {rows.map((r, i) => (
+        <div key={i}>
+          <div className="divider-fade" />
+          <div className="grid gap-1 rounded-xl px-4 py-4 transition-colors hover:bg-hover-row md:grid-cols-3 md:gap-4">
+            <div className="font-semibold">{r[0]}</div>
+            <div>{r[1]}</div>
+            <div><span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-sm text-primary">{r[2]}</span></div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 function Index() {
   const [tab, setTab] = useState(0);
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [done, setDone] = useState<Record<number, boolean>>({});
+  const [days, setDays] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setTab(Number(localStorage.getItem("rap-tab") ?? 0) || 0);
-    setDark(localStorage.getItem("rap-dark") === "1");
-    try { setDone(JSON.parse(localStorage.getItem("rap-done-" + today()) ?? "{}")); } catch { /* ignore */ }
+    setDark(localStorage.getItem("rap-dark") !== "0");
+    try { setDone(JSON.parse(localStorage.getItem("rap-done-" + todayKey()) ?? "{}")); } catch { /* ignore */ }
+    const s = new Set<string>();
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)!;
+      if (k.startsWith("rap-done-") && Object.values(JSON.parse(localStorage.getItem(k) || "{}")).some(Boolean)) s.add(k.slice(9));
+    }
+    setDays(s);
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
@@ -105,84 +123,134 @@ function Index() {
   const toggle = (i: number) => {
     const n = { ...done, [i]: !done[i] };
     setDone(n);
-    localStorage.setItem("rap-done-" + today(), JSON.stringify(n));
+    localStorage.setItem("rap-done-" + todayKey(), JSON.stringify(n));
+    const s = new Set(days);
+    if (Object.values(n).some(Boolean)) s.add(todayKey()); else s.delete(todayKey());
+    setDays(s);
   };
+
   const count = Object.values(done).filter(Boolean).length;
+  const pct = count / rotina.length;
+  const focus = useMemo(() => {
+    let total = 0, got = 0;
+    rotina.forEach(([h, , , , t], i) => { if (t === "Foco") { total += minutes(h); if (done[i]) got += minutes(h); } });
+    return { total, got };
+  }, [done]);
+  const st = streak(days, new Date());
+  const T = tabs[tab];
 
   return (
-    <div className="min-h-screen bg-background font-sans text-foreground">
-      <header className="rounded-b-xl bg-header px-4 py-8 text-center text-primary-foreground shadow-soft md:py-10">
-        <h1 className="text-2xl font-bold sm:text-3xl md:text-5xl">Rotina de Alta Performance</h1>
-        <p className="mt-3 text-base opacity-90 md:text-xl">Seu dashboard diário de produtividade e bem-estar</p>
-        <div className="no-print mt-5 flex justify-center gap-2">
-          <button onClick={toggleDark} className="rounded-full bg-primary-foreground/15 px-4 py-2 text-sm font-semibold hover:bg-primary-foreground/25">
-            {dark ? "☀️ Modo claro" : "🌙 Modo escuro"}
-          </button>
-          <button onClick={() => window.print()} className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:opacity-90">
-            🖨️ Imprimir / PDF
-          </button>
+    <div className="min-h-screen bg-app font-sans text-foreground antialiased">
+      <header className="glass sticky top-0 z-20 border-x-0 border-t-0">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-glow"><Zap className="size-5" /></div>
+            <span className="font-bold tracking-tight">Alta Performance</span>
+          </div>
+          <div className="no-print flex items-center gap-3">
+            <Switch on={dark} onChange={toggleDark} />
+            <button onClick={() => window.print()}
+              className="inline-flex items-center gap-2 rounded-xl border border-input px-3 py-2 text-sm font-semibold transition-all hover:border-primary hover:text-primary hover:shadow-glow">
+              <Printer className="size-4" /><span className="hidden sm:inline">Imprimir / PDF</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-3 py-6 sm:px-5">
-        <nav className="no-print mb-6 flex flex-wrap justify-center gap-2">
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 md:py-14">
+        <motion.div {...fade} className="mb-10">
+          <h1 className="text-gradient text-4xl font-bold tracking-[-0.02em] md:text-6xl">Rotina de Alta Performance</h1>
+          <p className="mt-3 max-w-xl text-muted-foreground md:text-lg">Energia pela manhã, foco profundo no meio do dia e recuperação à noite.</p>
+        </motion.div>
+
+        <motion.section {...fade} transition={{ duration: 0.4, delay: 0.05 }} className="glass mb-8 grid gap-6 rounded-2xl p-6 shadow-soft sm:grid-cols-3 md:p-8">
+          <div className="flex items-center gap-5">
+            <Donut pct={pct} />
+            <div><div className="text-sm text-muted-foreground">Resumo do dia</div><div className="text-lg font-bold">{count} de {rotina.length} blocos</div></div>
+          </div>
+          <div className="flex items-center gap-4 sm:border-l sm:border-border sm:pl-6">
+            <div className="grid size-12 place-items-center rounded-2xl border border-tag-foco/40 bg-tag-foco/12 text-tag-foco"><Target className="size-6" /></div>
+            <div><div className="text-sm text-muted-foreground">Foco total</div><div className="text-lg font-bold">{Math.floor(focus.got / 60)}h{String(focus.got % 60).padStart(2, "0")} <span className="text-sm font-medium text-muted-foreground">/ {Math.floor(focus.total / 60)}h{String(focus.total % 60).padStart(2, "0")}</span></div></div>
+          </div>
+          <div className="flex items-center gap-4 sm:border-l sm:border-border sm:pl-6">
+            <div className="grid size-12 place-items-center rounded-2xl border border-tag-descanso/40 bg-tag-descanso/12 text-tag-descanso"><Flame className="size-6" /></div>
+            <div><div className="text-sm text-muted-foreground">Streak</div><div className="text-lg font-bold">{st} {st === 1 ? "dia" : "dias"} seguidos</div></div>
+          </div>
+        </motion.section>
+
+        <nav className="no-print no-scrollbar glass mb-8 flex gap-1 overflow-x-auto rounded-2xl p-1.5 md:inline-flex">
           {tabs.map((t, i) => (
-            <button key={t} onClick={() => pick(i)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold shadow-soft transition-colors md:px-6 md:py-3 md:text-base ${tab === i ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground hover:bg-secondary"}`}>
-              {t}
+            <button key={t.label} onClick={() => pick(i)}
+              className={`relative shrink-0 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${tab === i ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              {tab === i && <motion.span layoutId="pill" transition={{ type: "spring", stiffness: 400, damping: 32 }} className="absolute inset-0 rounded-xl bg-primary shadow-glow" />}
+              <span className="relative flex items-center gap-2"><t.icon className="size-4" />{t.label}</span>
             </button>
           ))}
         </nav>
 
-        <section key={tab} className="animate-fade-up rounded-xl bg-card p-3 text-card-foreground shadow-soft sm:p-5">
-          <h2 className="mb-4 text-xl font-bold text-primary md:text-2xl">{tabs[tab]}</h2>
-          {tab === 0 && (
-            <>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  {(Object.keys(tagClass) as Tag[]).map((t) => (
-                    <span key={t} className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${tagClass[t]}`}>{t}</span>
+        <section className="glass rounded-2xl p-5 shadow-soft md:p-8">
+          <AnimatePresence mode="wait">
+            <motion.div key={tab} {...fade}>
+              <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight"><T.icon className="size-6 text-primary" />{T.label}</h2>
+                  <p className="mt-1 text-muted-foreground">{T.sub}</p>
+                </div>
+                {tab === 0 && (
+                  <div className="w-full sm:w-64">
+                    <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">Hoje</span><span className="font-semibold">{count}/{rotina.length} concluídos</span></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                      <motion.div className="bar-shimmer h-full rounded-full" animate={{ width: `${pct * 100}%` }} transition={{ duration: 0.5 }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {tab === 0 && (
+                <div>
+                  <div className="hidden grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] gap-4 px-4 pb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+                    <div /><div>Horário</div><div>Atividade</div><div>Método</div><div>Dica chave</div>
+                  </div>
+                  {rotina.map(([h, a, m, d, tag], i) => {
+                    const on = !!done[i];
+                    return (
+                      <div key={i}>
+                        <div className="divider-fade" />
+                        <div className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 rounded-xl px-3 py-4 transition-colors hover:bg-hover-row md:grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] md:items-center md:px-4">
+                          <div className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><Circle on={on} onClick={() => toggle(i)} label={`Concluir ${a}`} /></div>
+                          <div><span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1 font-mono text-xs font-semibold shadow-soft"><Clock className="size-3" />{h}</span></div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Strike on={on}>{a.startsWith("Foco Profundo") ? <strong className="text-primary">{a}</strong> : <span className="font-medium">{a}</span>}</Strike>
+                            <TagPill tag={tag} />
+                          </div>
+                          <div className={`text-sm text-muted-foreground transition-opacity md:col-auto ${on ? "opacity-50" : ""}`}>{m}</div>
+                          <div className={`col-start-2 hidden text-sm text-muted-foreground transition-opacity md:col-auto md:block ${on ? "opacity-50" : ""}`}>{d}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {tab === 1 && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
+              {tab === 2 && <SimpleList head={["Dia", "Ação", "Duração"]} rows={checklist} />}
+              {tab === 3 && (
+                <div className="grid gap-5 sm:grid-cols-3">
+                  {ferramentas.map(([e, t, d], i) => (
+                    <motion.div key={t} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }} whileHover={{ y: -4 }}
+                      className="rounded-2xl border border-border bg-muted p-6 transition-shadow hover:shadow-glow">
+                      <div className="grid size-12 place-items-center rounded-2xl bg-secondary text-2xl">{e}</div>
+                      <h3 className="mt-4 font-bold">{t}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">{d}</p>
+                    </motion.div>
                   ))}
                 </div>
-                <div className="text-sm font-semibold">
-                  Hoje: <span className="text-primary">{count}/{rotina.length}</span> concluídas
-                  <div className="mt-1 h-2 w-40 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full bg-accent transition-all" style={{ width: `${(count / rotina.length) * 100}%` }} />
-                  </div>
-                </div>
-              </div>
-              <Table
-                head={["✓", "Horário", "Atividade", "Método/Ferramenta", "Dica Chave"]}
-                rows={rotina.map(([h, a, m, d, tag], i) => [
-                  <input type="checkbox" aria-label={`Concluir ${a}`} checked={!!done[i]} onChange={() => toggle(i)} className="size-4 accent-primary" />,
-                  <span className="whitespace-nowrap font-semibold">{h}</span>,
-                  <span className={done[i] ? "line-through opacity-60" : ""}>
-                    {a.startsWith("Foco Profundo") ? <strong className="text-primary">{a}</strong> : a}{" "}
-                    <span className={`ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${tagClass[tag]}`}>{tag}</span>
-                  </span>,
-                  m,
-                  <span className="text-muted-foreground">{d}</span>,
-                ])}
-              />
-            </>
-          )}
-          {tab === 1 && <Table head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
-          {tab === 2 && <Table head={["Dia", "Ação", "Duração"]} rows={checklist} />}
-          {tab === 3 && (
-            <div className="grid gap-4 sm:grid-cols-3">
-              {ferramentas.map(([e, t, d]) => (
-                <div key={t} className="rounded-lg border border-border border-l-4 border-l-accent bg-muted p-5">
-                  <div className="text-3xl">{e}</div>
-                  <h3 className="mt-2 font-bold text-primary">{t}</h3>
-                  <p className="text-muted-foreground">{d}</p>
-                </div>
-              ))}
-            </div>
-          )}
+              )}
+            </motion.div>
+          </AnimatePresence>
         </section>
       </main>
 
-      <footer className="px-4 py-6 text-center text-sm text-muted-foreground">
+      <footer className="px-4 pb-10 text-center text-sm text-muted-foreground">
         Rotina de Alta Performance © 2025 | Implemente e adapte conforme sua realidade
       </footer>
     </div>
