@@ -8,6 +8,9 @@ import { LoginPanel } from "@/components/login-panel";
 import { AdaptacoesEditor, ChecklistEditor, RotinaEditor } from "@/components/plan-editor";
 import { clone, defaultPlan, sortRotina, validatePlan, type Plan } from "@/lib/plan";
 import { useSession } from "@/lib/use-session";
+import { supabase } from "@/integrations/supabase/client";
+import { fetchRemotePlan, pushRemotePlan } from "@/lib/plan-sync";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { countDone, focusTotals, loadCounts, loadDone, loadPlan, saveDone, savePlan } from "@/lib/storage";
 import { currentBlock, dateKey, ferramentas, lastDays, streak, tagClass, type Tag } from "@/lib/rotina";
 
@@ -154,6 +157,7 @@ function Index() {
   const [draft, setDraft] = useState<Plan | null>(null); // non-null while editing
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [sync, setSync] = useState<"idle" | "syncing" | "synced" | "error">("idle");
   const [counts, setCounts] = useState<Record<string, number>>({}); // day -> blocks done
   const days = useMemo(() => new Set(Object.keys(counts).filter((k) => counts[k]! > 0)), [counts]);
   const [today, setToday] = useState(todayKey);
@@ -182,6 +186,27 @@ function Index() {
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
+  // After login, pull the user's saved plan from Supabase; if they have none yet, upload the local one.
+  const userId = session?.user.id;
+  useEffect(() => {
+    if (!userId) { setSync("idle"); return undefined; }
+    let cancelled = false;
+    setSync("syncing");
+    (async () => {
+      try {
+        const db = supabase as unknown as SupabaseClient;
+        const remote = await fetchRemotePlan(db, userId);
+        if (cancelled) return;
+        if (remote) { setPlan(remote); savePlan(localStorage, remote); }
+        else await pushRemotePlan(db, userId, loadPlan(localStorage));
+        if (!cancelled) setSync("synced");
+      } catch {
+        if (!cancelled) setSync("error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
   const pick = (i: number) => { setTab(i); localStorage.setItem("rap-tab", String(i)); };
   const toggleDark = () => { localStorage.setItem("rap-dark", dark ? "0" : "1"); setDark(!dark); };
   const ids = useMemo(() => plan.rotina.map((b) => b.id), [plan.rotina]);
@@ -201,6 +226,10 @@ function Index() {
     const next = { ...draft, rotina: sortRotina(draft.rotina) };
     savePlan(localStorage, next);
     setPlan(next);
+    if (userId) {
+      setSync("syncing");
+      pushRemotePlan(supabase as unknown as SupabaseClient, userId, next).then(() => setSync("synced"), () => setSync("error"));
+    }
     setCounts((c) => ({ ...c, [today]: countDone(done, next.rotina.map((b) => b.id)) }));
     cancelEdit();
   };
@@ -311,6 +340,11 @@ function Index() {
                         <button onClick={() => setConfirmReset(true)} className="text-sm text-muted-foreground underline-offset-4 hover:underline">Restaurar padrão</button>
                       )}
                     </>
+                  )}
+                  {!draft && userId && sync !== "idle" && (
+                    <span role="status" className={`ml-auto text-xs ${sync === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+                      {sync === "syncing" ? "Sincronizando…" : sync === "synced" ? "Sincronizado com sua conta" : "Não sincronizado — salvo só neste navegador"}
+                    </span>
                   )}
                   {draft && editError && <p role="alert" className="basis-full text-sm text-destructive">{editError}</p>}
                   {draft && !editError && <p className="basis-full text-xs text-muted-foreground">Suas alterações ficam salvas neste navegador. “Restaurar padrão” só vale depois de Salvar.</p>}
