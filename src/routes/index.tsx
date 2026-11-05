@@ -137,7 +137,7 @@ function Index() {
     return { total, got };
   }, [done]);
   const st = streak(days, new Date());
-  const T = tabs[tab];
+  const T = tabs[tab] ?? tabs[0]!;
 
   return (
     <div className="min-h-screen bg-app font-sans text-foreground antialiased">

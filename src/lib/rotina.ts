@@ -50,8 +50,8 @@ export const ferramentas = [
 export function minutes(range: string): number {
   const [s, e] = range.split("-");
   if (!e) return 0;
-  const m = (t: string) => { const [h, mm] = t.split(":").map(Number); return h * 60 + mm; };
-  return m(e) - m(s);
+  const m = (t: string) => { const [h = 0, mm = 0] = t.split(":").map(Number); return h * 60 + mm; };
+  return m(e) - m(s ?? e);
 }
 
 /** Consecutive days (ending today, or yesterday if today has none) with at least one task done. */
