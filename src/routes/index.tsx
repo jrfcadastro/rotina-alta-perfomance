@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
-import { adaptacoes, checklist, dateKey, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
+import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -104,11 +104,27 @@ function Index() {
   const [dark, setDark] = useState(true);
   const [done, setDone] = useState<Record<number, boolean>>({});
   const [days, setDays] = useState<Set<string>>(new Set());
+  const [today, setToday] = useState(todayKey);
+  const [now, setNow] = useState<Date | null>(null); // null until mounted (avoids SSR hydration mismatch)
+
+  // Detect midnight rollover while the tab stays open.
+  useEffect(() => {
+    const check = () => { setToday(todayKey()); setNow(new Date()); };
+    check();
+    const id = setInterval(check, 30_000);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", check); window.removeEventListener("focus", check); };
+  }, []);
+
+  // Reload the checklist whenever the day changes.
+  useEffect(() => {
+    try { setDone(JSON.parse(localStorage.getItem("rap-done-" + today) ?? "{}")); } catch { setDone({}); }
+  }, [today]);
 
   useEffect(() => {
     setTab(Number(localStorage.getItem("rap-tab") ?? 0) || 0);
     setDark(localStorage.getItem("rap-dark") !== "0");
-    try { setDone(JSON.parse(localStorage.getItem("rap-done-" + todayKey()) ?? "{}")); } catch { /* ignore */ }
     const s = new Set<string>();
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)!;
@@ -126,9 +142,9 @@ function Index() {
   const toggle = (i: number) => {
     const n = { ...done, [i]: !done[i] };
     setDone(n);
-    localStorage.setItem("rap-done-" + todayKey(), JSON.stringify(n));
+    localStorage.setItem("rap-done-" + today, JSON.stringify(n));
     const s = new Set(days);
-    if (Object.values(n).some(Boolean)) s.add(todayKey()); else s.delete(todayKey());
+    if (Object.values(n).some(Boolean)) s.add(today); else s.delete(today);
     setDays(s);
   };
 
@@ -139,7 +155,9 @@ function Index() {
     rotina.forEach(([h, , , , t], i) => { if (t === "Foco") { total += minutes(h); if (done[i]) got += minutes(h); } });
     return { total, got };
   }, [done]);
+  const current = now ? currentBlock(now) : -1;
   const st = streak(days, new Date());
+  void today; // re-render on day change so the streak refreshes
   const T = tabs[tab] ?? tabs[0]!;
 
   return (
@@ -216,15 +234,18 @@ function Index() {
                   </div>
                   {rotina.map(([h, a, m, d, tag], i) => {
                     const on = !!done[i];
+                    const isNow = i === current;
                     return (
                       <div key={i}>
                         <div className="divider-fade" />
-                        <div className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 rounded-xl px-3 py-4 transition-colors hover:bg-hover-row md:grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] md:items-center md:px-4">
+                        <div aria-current={isNow ? "time" : undefined}
+                          className={`grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 rounded-xl px-3 py-4 transition-colors hover:bg-hover-row md:grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] md:items-center md:px-4 ${isNow ? "bg-primary/10 ring-1 ring-primary/50" : ""}`}>
                           <div className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><Circle on={on} onClick={() => toggle(i)} label={`Concluir ${a}`} /></div>
                           <div><span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1 font-mono text-xs font-semibold shadow-soft"><Clock className="size-3" />{h}</span></div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Strike on={on}>{a.startsWith("Foco Profundo") ? <strong className="text-primary">{a}</strong> : <span className="font-medium">{a}</span>}</Strike>
                             <TagPill tag={tag} />
+                            {isNow && <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground shadow-glow"><span className="size-1.5 animate-pulse rounded-full bg-current" />Agora</span>}
                           </div>
                           <div className={`text-sm text-muted-foreground transition-opacity md:col-auto ${on ? "opacity-50" : ""}`}>{m}</div>
                           <div className={`col-start-2 hidden text-sm text-muted-foreground transition-opacity md:col-auto md:block ${on ? "opacity-50" : ""}`}>{d}</div>

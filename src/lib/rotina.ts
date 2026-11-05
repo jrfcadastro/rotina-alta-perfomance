@@ -68,3 +68,25 @@ export function streak(doneDays: Set<string>, today: Date): number {
   while (doneDays.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }
+
+const toMin = (t: string) => { const [h = 0, m = 0] = t.split(":").map(Number); return h * 60 + m; };
+
+/**
+ * Index of the block running at `now` (local time), or -1 in gaps between blocks.
+ * Ranges are start-inclusive / end-exclusive. A single time ("22:00") runs until the
+ * first block of the next day starts, wrapping past midnight.
+ */
+export function currentBlock(now: Date, blocks: readonly (readonly string[])[] = rotina): number {
+  const t = now.getHours() * 60 + now.getMinutes();
+  for (let i = 0; i < blocks.length; i++) {
+    const [s, e] = (blocks[i]![0] ?? "").split("-");
+    if (s && e && t >= toMin(s) && t < toMin(e)) return i;
+  }
+  const last = blocks.length - 1;
+  const [ls, le] = (blocks[last]?.[0] ?? "").split("-");
+  if (ls && !le) {
+    const first = toMin((blocks[0]![0] ?? "").split("-")[0]!);
+    if (t >= toMin(ls) || t < first) return last;
+  }
+  return -1;
+}
