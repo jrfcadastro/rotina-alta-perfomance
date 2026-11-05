@@ -369,10 +369,6 @@ function Index() {
           </AnimatePresence>
         </section>
       </main>
-
-      <footer className="px-4 pb-10 text-center text-sm text-muted-foreground">
-        Rotina de Alta Performance © 2025 | Implemente e adapte conforme sua realidade
-      </footer>
     </div>
   );
 }
