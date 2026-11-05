@@ -54,12 +54,17 @@ export function minutes(range: string): number {
   return m(e) - m(s ?? e);
 }
 
-/** Consecutive days (ending today, or yesterday if today has none) with at least one task done. */
+/** "YYYY-MM-DD" in the viewer's local timezone (not UTC). */
+export function dateKey(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Consecutive local days (ending today, or yesterday if today has none) with at least one task done. */
 export function streak(doneDays: Set<string>, today: Date): number {
-  const key = (d: Date) => d.toISOString().slice(0, 10);
   const d = new Date(today);
-  if (!doneDays.has(key(d))) d.setUTCDate(d.getUTCDate() - 1);
+  if (!doneDays.has(dateKey(d))) d.setDate(d.getDate() - 1);
   let n = 0;
-  while (doneDays.has(key(d))) { n++; d.setUTCDate(d.getUTCDate() - 1); }
+  while (doneDays.has(dateKey(d))) { n++; d.setDate(d.getDate() - 1); }
   return n;
 }

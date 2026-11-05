@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
-import { adaptacoes, checklist, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
+import { adaptacoes, checklist, dateKey, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,7 +24,7 @@ const tabs = [
   { label: "Checklist Semanal", icon: CalendarCheck, sub: "Rituais que mantêm a semana no trilho." },
   { label: "Ferramentas", icon: Wrench, sub: "O kit essencial para foco e automação." },
 ];
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => dateKey(new Date());
 const fade = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.28 } };
 
 function TagPill({ tag }: { tag: Tag }) {
@@ -112,7 +112,10 @@ function Index() {
     const s = new Set<string>();
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)!;
-      if (k.startsWith("rap-done-") && Object.values(JSON.parse(localStorage.getItem(k) || "{}")).some(Boolean)) s.add(k.slice(9));
+      if (!k.startsWith("rap-done-")) continue;
+      try {
+        if (Object.values(JSON.parse(localStorage.getItem(k) || "{}")).some(Boolean)) s.add(k.slice(9));
+      } catch { /* ignore corrupted entry */ }
     }
     setDays(s);
   }, []);
