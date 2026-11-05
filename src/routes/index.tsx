@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChartColumn, Check, ShieldCheck, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
 import { AdminPanel } from "@/components/admin-panel";
 import { AuthButton } from "@/components/auth-button";
+import { LoginPanel } from "@/components/login-panel";
 import { useSession } from "@/lib/use-session";
 import { countDone, focusTotals, loadCounts, loadDone, saveDone } from "@/lib/storage";
 import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, lastDays, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
@@ -145,7 +146,7 @@ function History({ counts, today }: { counts: Record<string, number>; today: str
 
 function Index() {
   const [tab, setTab] = useState(0);
-  const { session, isAdmin } = useSession();
+  const { session, loading, available, isAdmin } = useSession();
   const [dark, setDark] = useState(true);
   const [done, setDone] = useState<Record<number, boolean>>({});
   const [counts, setCounts] = useState<Record<string, number>>({}); // day -> blocks done
@@ -193,6 +194,10 @@ function Index() {
   const allTabs = isAdmin ? [...tabs, adminTab] : tabs;
   const cur = tab < allTabs.length ? tab : 0; // saved tab may be Admin after logout
   const T = allTabs[cur] ?? tabs[0]!;
+
+  // Logged-out visitors see only the login panel. If Supabase isn't configured at all, the app stays usable.
+  if (loading) return <div className="min-h-screen bg-app" aria-busy="true" />;
+  if (available && !session) return <LoginPanel />;
 
   return (
     <div className="min-h-screen bg-app font-sans text-foreground antialiased">
