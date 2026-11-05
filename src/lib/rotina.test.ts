@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentBlock, dateKey, lastDays, minutes, rotina, streak } from "./rotina";
+import { currentBlock, dateKey, lastDays, minutes, defaultRotina, streak } from "./rotina";
 
 describe("rotina", () => {
   it("counts minutes in a range", () => {
@@ -16,12 +16,12 @@ describe("rotina", () => {
   });
   it("currentBlock finds the running block", () => {
     const at = (h: number, m: number) => new Date(2026, 10, 5, h, m);
-    expect(rotina[currentBlock(at(5, 0))]![1]).toContain("Hidratação");
-    expect(rotina[currentBlock(at(5, 10))]![1]).toContain("Meditação"); // end exclusive
-    expect(rotina[currentBlock(at(8, 0))]![1]).toContain("Foco Profundo #2");
+    expect(defaultRotina[currentBlock(at(5, 0))]!.activity).toContain("Hidratação");
+    expect(defaultRotina[currentBlock(at(5, 10))]!.activity).toContain("Meditação"); // end exclusive
+    expect(defaultRotina[currentBlock(at(8, 0))]!.activity).toContain("Foco Profundo #2");
     expect(currentBlock(at(7, 15))).toBe(-1); // gap 7:00-7:30
-    expect(rotina[currentBlock(at(22, 30))]![1]).toBe("Dormir");
-    expect(rotina[currentBlock(at(3, 0))]![1]).toBe("Dormir"); // wraps past midnight
+    expect(defaultRotina[currentBlock(at(22, 30))]!.activity).toBe("Dormir");
+    expect(defaultRotina[currentBlock(at(3, 0))]!.activity).toBe("Dormir"); // wraps past midnight
   });
   it("lastDays returns n local days, oldest first", () => {
     const d = lastDays(new Date(2026, 10, 2, 23, 30), 7).map((x) => x.key);

@@ -1,4 +1,5 @@
 export type Tag = "Foco" | "Trabalho" | "Descanso" | "Aprendizado";
+export const tags: Tag[] = ["Foco", "Trabalho", "Descanso", "Aprendizado"];
 export const tagClass: Record<Tag, string> = {
   Foco: "bg-tag-foco/12 text-tag-foco border-tag-foco/40",
   Trabalho: "bg-tag-trabalho/12 text-tag-trabalho border-tag-trabalho/40",
@@ -6,7 +7,7 @@ export const tagClass: Record<Tag, string> = {
   Aprendizado: "bg-tag-aprendizado/12 text-tag-aprendizado border-tag-aprendizado/40",
 };
 
-export const rotina: [string, string, string, string, Tag][] = [
+const rotinaSeed: [string, string, string, string, Tag][] = [
   ["5:00-5:10", "Hidratação + luz solar", "500ml água com limão", "Ativa cortisol natural", "Descanso"],
   ["5:10-5:30", "Meditação + visualização de metas", "10min meditação + 5min visualização", "Foco no propósito", "Foco"],
   ["5:30-6:00", "Exercício (HIIT ou yoga + musculação)", "15min HIIT + 15min musculação", "Libera BDNF", "Descanso"],
@@ -29,12 +30,12 @@ export const rotina: [string, string, string, string, Tag][] = [
   ["22:00", "Dormir", "7-8h de sono", "Temperatura 19°C", "Descanso"],
 ];
 
-export const adaptacoes = [
+const adaptacoesSeed = [
   ["Acordar mais tarde", "Reduzir bloco matinal para 30min", "5:30-6:00: Foco Profundo #1"],
   ["Filhos/responsabilidades", "Treino no horário de almoço", "12:30-13:00 (HIIT rápido)"],
   ["Cansaço à tarde", "Substituir power nap por respiração", "4-7-8 (10min)"],
 ];
-export const checklist = [
+const checklistSeed = [
   ["Segunda-feira", "Planejamento semanal", "30min"],
   ["Sexta-feira", "Revisão de métricas", "30min"],
   ["Sábado/Domingo", "Dia offline (recuperação)", "24h (1 dia)"],
@@ -76,16 +77,17 @@ const toMin = (t: string) => { const [h = 0, m = 0] = t.split(":").map(Number); 
  * Ranges are start-inclusive / end-exclusive. A single time ("22:00") runs until the
  * first block of the next day starts, wrapping past midnight.
  */
-export function currentBlock(now: Date, blocks: readonly (readonly string[])[] = rotina): number {
+export function currentBlock(now: Date, blocks: readonly { time: string }[] = defaultRotina): number {
   const t = now.getHours() * 60 + now.getMinutes();
+  if (!blocks.length) return -1;
   for (let i = 0; i < blocks.length; i++) {
-    const [s, e] = (blocks[i]![0] ?? "").split("-");
+    const [s, e] = (blocks[i]!.time ?? "").split("-");
     if (s && e && t >= toMin(s) && t < toMin(e)) return i;
   }
   const last = blocks.length - 1;
-  const [ls, le] = (blocks[last]?.[0] ?? "").split("-");
+  const [ls, le] = (blocks[last]?.time ?? "").split("-");
   if (ls && !le) {
-    const first = toMin((blocks[0]![0] ?? "").split("-")[0]!);
+    const first = toMin((blocks[0]!.time ?? "").split("-")[0]!);
     if (t >= toMin(ls) || t < first) return last;
   }
   return -1;
@@ -98,3 +100,18 @@ export function lastDays(today: Date, n = 7): { key: string; date: Date }[] {
     return { key: dateKey(d), date: d };
   });
 }
+
+/** Editable plan rows. Default rows keep their original index as id so previously saved checklists still match. */
+export type Block = { id: string; time: string; activity: string; method: string; tip: string; tag: Tag };
+export type Adaptation = { id: string; scenario: string; adjustment: string; alternative: string };
+export type ChecklistItem = { id: string; day: string; action: string; duration: string };
+
+export const defaultRotina: Block[] = rotinaSeed.map(([time, activity, method, tip, tag], i) => ({
+  id: String(i), time, activity, method, tip, tag,
+}));
+export const defaultAdaptacoes: Adaptation[] = adaptacoesSeed.map(([scenario, adjustment, alternative], i) => ({
+  id: String(i), scenario: scenario!, adjustment: adjustment!, alternative: alternative!,
+}));
+export const defaultChecklist: ChecklistItem[] = checklistSeed.map(([day, action, duration], i) => ({
+  id: String(i), day: day!, action: action!, duration: duration!,
+}));

@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChartColumn, Check, ShieldCheck, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
+import { ChartColumn, Check, ShieldCheck, Clock, Flame, Pencil, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
 import { AdminPanel } from "@/components/admin-panel";
 import { AuthButton } from "@/components/auth-button";
 import { LoginPanel } from "@/components/login-panel";
+import { AdaptacoesEditor, ChecklistEditor, RotinaEditor } from "@/components/plan-editor";
+import { clone, defaultPlan, sortRotina, validatePlan, type Plan } from "@/lib/plan";
 import { useSession } from "@/lib/use-session";
-import { countDone, focusTotals, loadCounts, loadDone, saveDone } from "@/lib/storage";
-import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, lastDays, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
+import { countDone, focusTotals, loadCounts, loadDone, loadPlan, saveDone, savePlan } from "@/lib/storage";
+import { currentBlock, dateKey, ferramentas, lastDays, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -106,11 +108,10 @@ function SimpleList({ head, rows }: { head: string[]; rows: string[][] }) {
   );
 }
 
-function History({ counts, today }: { counts: Record<string, number>; today: string }) {
-  const total = rotina.length;
+function History({ counts, today, total }: { counts: Record<string, number>; today: string; total: number }) {
   const week = lastDays(new Date());
   const vals = week.map(({ key }) => Math.min(counts[key] ?? 0, total));
-  const avg = vals.reduce((a, b) => a + b, 0) / week.length / total;
+  const avg = total ? vals.reduce((a, b) => a + b, 0) / week.length / total : 0;
   const best = Math.max(...vals);
   return (
     <div>
@@ -122,7 +123,7 @@ function History({ counts, today }: { counts: Record<string, number>; today: str
       <div className="flex h-56 items-end gap-2 sm:gap-4" role="list" aria-label="Blocos concluídos por dia">
         {week.map(({ key, date }, i) => {
           const v = vals[i]!;
-          const pct = v / total;
+          const pct = total ? v / total : 0;
           const isToday = key === today;
           return (
             <div key={key} role="listitem" className="flex h-full flex-1 flex-col items-center justify-end gap-2"
@@ -148,7 +149,11 @@ function Index() {
   const [tab, setTab] = useState(0);
   const { session, loading, available, isAdmin } = useSession();
   const [dark, setDark] = useState(true);
-  const [done, setDone] = useState<Record<number, boolean>>({});
+  const [done, setDone] = useState<Record<string, boolean>>({});
+  const [plan, setPlan] = useState<Plan>(defaultPlan);
+  const [draft, setDraft] = useState<Plan | null>(null); // non-null while editing
+  const [editError, setEditError] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [counts, setCounts] = useState<Record<string, number>>({}); // day -> blocks done
   const days = useMemo(() => new Set(Object.keys(counts).filter((k) => counts[k]! > 0)), [counts]);
   const [today, setToday] = useState(todayKey);
@@ -173,22 +178,39 @@ function Index() {
     setTab(Number(localStorage.getItem("rap-tab") ?? 0) || 0);
     setDark(localStorage.getItem("rap-dark") !== "0");
     setCounts(loadCounts(localStorage));
+    setPlan(loadPlan(localStorage));
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
   const pick = (i: number) => { setTab(i); localStorage.setItem("rap-tab", String(i)); };
   const toggleDark = () => { localStorage.setItem("rap-dark", dark ? "0" : "1"); setDark(!dark); };
-  const toggle = (i: number) => {
-    const n = { ...done, [i]: !done[i] };
+  const ids = useMemo(() => plan.rotina.map((b) => b.id), [plan.rotina]);
+  const toggle = (id: string) => {
+    const n = { ...done, [id]: !done[id] };
     setDone(n);
     saveDone(localStorage, today, n);
-    setCounts((c) => ({ ...c, [today]: countDone(n) }));
+    setCounts((c) => ({ ...c, [today]: countDone(n, ids) }));
   };
 
-  const count = countDone(done);
-  const pct = count / rotina.length;
-  const focus = useMemo(() => focusTotals(done), [done]);
-  const current = now ? currentBlock(now) : -1;
+  const startEdit = () => { setDraft(clone(plan)); setEditError(null); setConfirmReset(false); };
+  const cancelEdit = () => { setDraft(null); setEditError(null); setConfirmReset(false); };
+  const saveEdit = () => {
+    if (!draft) return;
+    const err = validatePlan(draft);
+    if (err) return setEditError(err);
+    const next = { ...draft, rotina: sortRotina(draft.rotina) };
+    savePlan(localStorage, next);
+    setPlan(next);
+    setCounts((c) => ({ ...c, [today]: countDone(done, next.rotina.map((b) => b.id)) }));
+    cancelEdit();
+  };
+  const resetDraft = () => { setDraft(defaultPlan()); setEditError(null); setConfirmReset(false); };
+
+  const total = plan.rotina.length;
+  const count = countDone(done, ids);
+  const pct = total ? count / total : 0;
+  const focus = useMemo(() => focusTotals(done, plan.rotina), [done, plan.rotina]);
+  const current = now ? currentBlock(now, plan.rotina) : -1;
   const st = streak(days, new Date());
   void today; // re-render on day change so the streak refreshes
   const allTabs = isAdmin ? [...tabs, adminTab] : tabs;
@@ -227,7 +249,7 @@ function Index() {
         <motion.section {...fade} transition={{ duration: 0.4, delay: 0.05 }} className="glass mb-8 grid gap-6 rounded-2xl p-6 shadow-soft sm:grid-cols-3 md:p-8">
           <div className="flex items-center gap-5">
             <Donut pct={pct} />
-            <div><div className="text-sm text-muted-foreground">Resumo do dia</div><div className="text-lg font-bold">{count} de {rotina.length} blocos</div></div>
+            <div><div className="text-sm text-muted-foreground">Resumo do dia</div><div className="text-lg font-bold">{count} de {total} blocos</div></div>
           </div>
           <div className="flex items-center gap-4 sm:border-l sm:border-border sm:pl-6">
             <div className="grid size-12 place-items-center rounded-2xl border border-tag-foco/40 bg-tag-foco/12 text-tag-foco"><Target className="size-6" /></div>
@@ -259,7 +281,7 @@ function Index() {
                 </div>
                 {cur === 0 && (
                   <div className="w-full sm:w-64">
-                    <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">Hoje</span><span className="font-semibold">{count}/{rotina.length} concluídos</span></div>
+                    <div className="mb-2 flex justify-between text-sm"><span className="text-muted-foreground">Hoje</span><span className="font-semibold">{count}/{total} concluídos</span></div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
                       <motion.div className="bar-shimmer h-full rounded-full" animate={{ width: `${pct * 100}%` }} transition={{ duration: 0.5 }} />
                     </div>
@@ -267,20 +289,52 @@ function Index() {
                 )}
               </div>
 
-              {cur === 0 && (
+              {cur <= 2 && (
+                <div className="no-print mb-6 flex flex-wrap items-center gap-3">
+                  {!draft ? (
+                    <button onClick={startEdit}
+                      className="inline-flex items-center gap-2 rounded-xl border border-input px-3 py-2 text-sm font-semibold transition-all hover:border-primary hover:text-primary hover:shadow-glow">
+                      <Pencil className="size-4" />Editar
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={saveEdit} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow">
+                        <Check className="size-4" />Salvar
+                      </button>
+                      <button onClick={cancelEdit} className="rounded-xl border border-input px-3 py-2 text-sm font-semibold hover:border-primary hover:text-primary">Cancelar</button>
+                      {confirmReset ? (
+                        <span className="flex items-center gap-2 text-sm">
+                          <button onClick={resetDraft} className="font-semibold text-destructive hover:underline">Confirmar restauração</button>
+                          <button onClick={() => setConfirmReset(false)} className="text-muted-foreground hover:underline">Não</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setConfirmReset(true)} className="text-sm text-muted-foreground underline-offset-4 hover:underline">Restaurar padrão</button>
+                      )}
+                    </>
+                  )}
+                  {draft && editError && <p role="alert" className="basis-full text-sm text-destructive">{editError}</p>}
+                  {draft && !editError && <p className="basis-full text-xs text-muted-foreground">Suas alterações ficam salvas neste navegador. “Restaurar padrão” só vale depois de Salvar.</p>}
+                </div>
+              )}
+
+              {cur === 0 && draft && <RotinaEditor rows={draft.rotina} onChange={(rotina) => setDraft({ ...draft, rotina })} />}
+              {cur === 1 && draft && <AdaptacoesEditor rows={draft.adaptacoes} onChange={(adaptacoes) => setDraft({ ...draft, adaptacoes })} />}
+              {cur === 2 && draft && <ChecklistEditor rows={draft.checklist} onChange={(checklist) => setDraft({ ...draft, checklist })} />}
+
+              {cur === 0 && !draft && (
                 <div>
                   <div className="hidden grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] gap-4 px-4 pb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground md:grid">
                     <div /><div>Horário</div><div>Atividade</div><div>Método</div><div>Dica chave</div>
                   </div>
-                  {rotina.map(([h, a, m, d, tag], i) => {
-                    const on = !!done[i];
+                  {plan.rotina.map(({ id, time: h, activity: a, method: m, tip: d, tag }, i) => {
+                    const on = !!done[id];
                     const isNow = i === current;
                     return (
-                      <div key={i}>
+                      <div key={id}>
                         <div className="divider-fade" />
                         <div aria-current={isNow ? "time" : undefined}
                           className={`grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-2 rounded-xl px-3 py-4 transition-colors hover:bg-hover-row md:grid-cols-[2rem_8rem_1.4fr_1.2fr_1fr] md:items-center md:px-4 ${isNow ? "bg-primary/10 ring-1 ring-primary/50" : ""}`}>
-                          <div className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><Circle on={on} onClick={() => toggle(i)} label={`Concluir ${a}`} /></div>
+                          <div className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><Circle on={on} onClick={() => toggle(id)} label={`Concluir ${a}`} /></div>
                           <div><span className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1 font-mono text-xs font-semibold shadow-soft"><Clock className="size-3" />{h}</span></div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Strike on={on}>{a.startsWith("Foco Profundo") ? <strong className="text-primary">{a}</strong> : <span className="font-medium">{a}</span>}</Strike>
@@ -295,9 +349,9 @@ function Index() {
                   })}
                 </div>
               )}
-              {cur === 1 && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
-              {cur === 2 && <SimpleList head={["Dia", "Ação", "Duração"]} rows={checklist} />}
-              {cur === 4 && <History counts={counts} today={today} />}
+              {cur === 1 && !draft && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={plan.adaptacoes.map((r) => [r.scenario, r.adjustment, r.alternative])} />}
+              {cur === 2 && !draft && <SimpleList head={["Dia", "Ação", "Duração"]} rows={plan.checklist.map((r) => [r.day, r.action, r.duration])} />}
+              {cur === 4 && <History counts={counts} today={today} total={total} />}
               {cur === 5 && isAdmin && session && <AdminPanel selfId={session.user.id} />}
               {cur === 3 && (
                 <div className="grid gap-5 sm:grid-cols-3">
