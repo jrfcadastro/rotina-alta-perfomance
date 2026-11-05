@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
-import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
+import { ChartColumn, Check, Clock, Flame, Printer, Target, Zap, Shuffle, CalendarCheck, Wrench, Moon, Sun } from "lucide-react";
+import { adaptacoes, checklist, currentBlock, dateKey, ferramentas, lastDays, minutes, rotina, streak, tagClass, type Tag } from "@/lib/rotina";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -23,6 +23,7 @@ const tabs = [
   { label: "Adaptações", icon: Shuffle, sub: "Ajustes para quando a vida não segue o plano." },
   { label: "Checklist Semanal", icon: CalendarCheck, sub: "Rituais que mantêm a semana no trilho." },
   { label: "Ferramentas", icon: Wrench, sub: "O kit essencial para foco e automação." },
+  { label: "Histórico", icon: ChartColumn, sub: "Blocos concluídos nos últimos 7 dias." },
 ];
 const todayKey = () => dateKey(new Date());
 const fade = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.28 } };
@@ -99,11 +100,50 @@ function SimpleList({ head, rows }: { head: string[]; rows: string[][] }) {
   );
 }
 
+function History({ counts, today }: { counts: Record<string, number>; today: string }) {
+  const total = rotina.length;
+  const week = lastDays(new Date());
+  const vals = week.map(({ key }) => Math.min(counts[key] ?? 0, total));
+  const avg = vals.reduce((a, b) => a + b, 0) / week.length / total;
+  const best = Math.max(...vals);
+  return (
+    <div>
+      <div className="mb-8 flex flex-wrap gap-6 text-sm">
+        <div><div className="text-muted-foreground">Média diária</div><div className="text-lg font-bold">{Math.round(avg * 100)}%</div></div>
+        <div><div className="text-muted-foreground">Melhor dia</div><div className="text-lg font-bold">{best} de {total} blocos</div></div>
+        <div><div className="text-muted-foreground">Dias ativos</div><div className="text-lg font-bold">{vals.filter(Boolean).length} de {week.length}</div></div>
+      </div>
+      <div className="flex h-56 items-end gap-2 sm:gap-4" role="list" aria-label="Blocos concluídos por dia">
+        {week.map(({ key, date }, i) => {
+          const v = vals[i]!;
+          const pct = v / total;
+          const isToday = key === today;
+          return (
+            <div key={key} role="listitem" className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+              aria-label={`${date.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}: ${v} de ${total} blocos`}>
+              <span className="text-xs font-semibold">{v > 0 ? `${Math.round(pct * 100)}%` : "–"}</span>
+              <div className="flex w-full flex-1 items-end overflow-hidden rounded-t-lg bg-secondary">
+                <motion.div className={`w-full rounded-t-lg ${isToday ? "bar-shimmer" : "bg-primary/60"}`}
+                  initial={{ height: 0 }} animate={{ height: `${pct * 100}%` }} transition={{ duration: 0.5, delay: i * 0.05 }} />
+              </div>
+              <div className={`text-center text-xs ${isToday ? "font-bold text-primary" : "text-muted-foreground"}`}>
+                <div className="capitalize">{date.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}</div>
+                <div>{date.getDate()}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Index() {
   const [tab, setTab] = useState(0);
   const [dark, setDark] = useState(true);
   const [done, setDone] = useState<Record<number, boolean>>({});
-  const [days, setDays] = useState<Set<string>>(new Set());
+  const [counts, setCounts] = useState<Record<string, number>>({}); // day -> blocks done
+  const days = useMemo(() => new Set(Object.keys(counts).filter((k) => counts[k]! > 0)), [counts]);
   const [today, setToday] = useState(todayKey);
   const [now, setNow] = useState<Date | null>(null); // null until mounted (avoids SSR hydration mismatch)
 
@@ -125,15 +165,16 @@ function Index() {
   useEffect(() => {
     setTab(Number(localStorage.getItem("rap-tab") ?? 0) || 0);
     setDark(localStorage.getItem("rap-dark") !== "0");
-    const s = new Set<string>();
+    const c: Record<string, number> = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i)!;
       if (!k.startsWith("rap-done-")) continue;
       try {
-        if (Object.values(JSON.parse(localStorage.getItem(k) || "{}")).some(Boolean)) s.add(k.slice(9));
+        const n = Object.values(JSON.parse(localStorage.getItem(k) || "{}")).filter(Boolean).length;
+        if (n > 0) c[k.slice(9)] = n;
       } catch { /* ignore corrupted entry */ }
     }
-    setDays(s);
+    setCounts(c);
   }, []);
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
@@ -143,9 +184,7 @@ function Index() {
     const n = { ...done, [i]: !done[i] };
     setDone(n);
     localStorage.setItem("rap-done-" + today, JSON.stringify(n));
-    const s = new Set(days);
-    if (Object.values(n).some(Boolean)) s.add(today); else s.delete(today);
-    setDays(s);
+    setCounts((c) => ({ ...c, [today]: Object.values(n).filter(Boolean).length }));
   };
 
   const count = Object.values(done).filter(Boolean).length;
@@ -257,6 +296,7 @@ function Index() {
               )}
               {tab === 1 && <SimpleList head={["Cenário", "Ajuste", "Alternativa"]} rows={adaptacoes} />}
               {tab === 2 && <SimpleList head={["Dia", "Ação", "Duração"]} rows={checklist} />}
+              {tab === 4 && <History counts={counts} today={today} />}
               {tab === 3 && (
                 <div className="grid gap-5 sm:grid-cols-3">
                   {ferramentas.map(([e, t, d], i) => (

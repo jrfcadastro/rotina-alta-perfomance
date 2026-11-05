@@ -90,3 +90,11 @@ export function currentBlock(now: Date, blocks: readonly (readonly string[])[] =
   }
   return -1;
 }
+
+/** The last `n` local days ending at `today`, oldest first. */
+export function lastDays(today: Date, n = 7): { key: string; date: Date }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (n - 1 - i), 12);
+    return { key: dateKey(d), date: d };
+  });
+}

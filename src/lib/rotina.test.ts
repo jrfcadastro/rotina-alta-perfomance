@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { currentBlock, dateKey, minutes, rotina, streak } from "./rotina";
+import { currentBlock, dateKey, lastDays, minutes, rotina, streak } from "./rotina";
 
 describe("rotina", () => {
   it("counts minutes in a range", () => {
@@ -22,5 +22,9 @@ describe("rotina", () => {
     expect(currentBlock(at(7, 15))).toBe(-1); // gap 7:00-7:30
     expect(rotina[currentBlock(at(22, 30))]![1]).toBe("Dormir");
     expect(rotina[currentBlock(at(3, 0))]![1]).toBe("Dormir"); // wraps past midnight
+  });
+  it("lastDays returns n local days, oldest first", () => {
+    const d = lastDays(new Date(2026, 10, 2, 23, 30), 7).map((x) => x.key);
+    expect(d).toEqual(["2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02"]);
   });
 });
